@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Gerador — Tela Urna Eletrônica</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════
+   FERRAMENTA (painel de controle + wrapper)
+═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #12121f;
+  font-family: Arial, sans-serif;
+  color: #ddd;
+  padding: 18px;
+  min-height: 100vh;
+}
+
+h1 {
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: #7eb8f7;
+  border-bottom: 1px solid #2a2a45;
+  padding-bottom: 10px;
+  margin-bottom: 18px;
+}
+
+.layout { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+
+/* ── painel esquerdo ── */
+.ctrl {
+  background: #1a1a30;
+  border: 1px solid #2a2a45;
+  border-radius: 5px;
+  padding: 16px;
+  width: 270px;
+  flex-shrink: 0;
+}
+.ctrl h2 {
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: #7eb8f7;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #2a2a45;
+  padding-bottom: 6px;
+}
+.g { margin-bottom: 11px; }
+label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #999;
+  margin-bottom: 4px;
+}
+select, input[type=text], input[type=number] {
+  width: 100%;
+  background: #0d1f3c;
+  border: 1px solid #2a2a55;
+  border-radius: 3px;
+  color: #e0e0e0;
+  font-size: 12px;
+  padding: 5px 7px;
+  outline: none;
+}
+select:focus, input:focus { border-color: #7eb8f7; }
+.info { font-size: 10px; color: #556; margin-top: 3px; }
+hr.s { border: none; border-top: 1px solid #2a2a45; margin: 13px 0; }
+.btn {
+  display: block; width: 100%;
+  padding: 9px; border: none; border-radius: 3px;
+  font-size: 11px; letter-spacing: 1px;
+  text-transform: uppercase; cursor: pointer;
+  margin-top: 7px; font-weight: 700;
+  transition: filter .15s;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn-render  { background: #1565c0; color: #fff; }
+.btn-export  { background: #1b5e20; color: #fff; }
+.btn-all     { background: #4a148c; color: #fff; }
+
+/* upload foto */
+.foto-wrap {
+  border: 1px dashed #445;
+  border-radius: 3px;
+  padding: 7px;
+  text-align: center;
+  font-size: 10px;
+  color: #777;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.foto-wrap input[type=file] {
+  position: absolute; inset: 0;
+  opacity: 0; cursor: pointer; width: 100%;
+}
+.foto-wrap:hover { border-color: #7eb8f7; color: #aaa; }
+#foto-preview {
+  width: 100%; max-height: 80px;
+  object-fit: cover; margin-top: 6px;
+  display: none; border-radius: 2px;
+}
+
+/* preview */
+.preview-wrap { flex: 1; min-width: 0; }
+.preview-wrap h2 {
+  font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: #556;
+  margin-bottom: 8px;
+}
+#preview-box {
+  background: #000;
+  border: 1px solid #2a2a45;
+  border-radius: 3px;
+  padding: 8px;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   TELA DA URNA
+   Base: 642 × 480 px  (proporção 4:3 ligeiramente)
+   Coordenadas derivadas do CSS real do TSE.
+   A área exportável é APENAS esta div — sem barras
+   da ferramenta web, sem "TREINAMENTO", fundo branco.
+═══════════════════════════════════════════════ */
+#urna-tela {
+  position: relative;
+  background: #fff;
+  width: 642px;
+  height: 480px;
+  overflow: hidden;
+  transform-origin: top left;
+  font-family: Arial, sans-serif;
+}
+
+/* ── Faixa cinza topo "SEU VOTO PARA" ── */
+#u-faixa-topo {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%; height: 26px;
+  background: #dbe2ef;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: #1b305a;
+}
+
+/* ── Painel branco principal ── */
+/* No CSS do TSE: #painel left=49, top=311 dentro de #tela(642×603).
+   Aqui a tela interna começa em y=26 (faixa topo), então
+   o painel ocupa o resto: left=49px, top=26px, right=642-49=593px */
+#u-painel {
+  position: absolute;
+  left: 49px;
+  top: 26px;
+  width: 547px;     /* 642-49-46 ≈ CSS: width:547 */
+  bottom: 0;
+  background: #fff;
+}
+
+/* Cargo — "Presidente" (CSS: left=140, top=42, font-size=22px) */
+#u-cargo {
+  position: absolute;
+  left: 91px;   /* 140-49 = 91 relativo ao painel */
+  top: 36px;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  color: #000;
+}
+
+/* "SEU VOTO PARA" dentro do painel (fase) — CSS: left=230,top=2,color=#acacac */
+#u-fase {
+  position: absolute;
+  left: 0; top: 4px;
+  width: 100%; text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: #acacac;
+  letter-spacing: 0.5px;
+}
+
+/* ── Caixas de dígito ──
+   CSS real: cxNumero1 left=90,top=88,w=22,h=27; cxNumero2 left=120,top=88 */
+#u-num-label {
+  position: absolute;
+  left: 1px; top: 90px;
+  font-size: 14px; font-weight: 500;
+  color: #000; padding: 2px;
+}
+#u-cx1, #u-cx2 {
+  position: absolute;
+  top: 84px;
+  width: 24px; height: 30px;
+  border: 1px solid #555;
+  font-size: 26px; font-weight: 400;
+  text-align: center;
+  line-height: 30px;
+  color: #000; background: #fff;
+}
+#u-cx1 { left: 90px; }
+#u-cx2 { left: 120px; }
+
+/* ── Foto candidato ──
+   CSS: cxFoto left=446,top=1,w=101,h=162  (relativo ao #painel) */
+#u-foto-box {
+  position: absolute;
+  left: 446px; top: 1px;
+  width: 101px; height: 162px;
+  border: 1px solid #ccc;
+  overflow: hidden;
+  background: #e8e8e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#u-foto-box img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+/* Placeholder SVG silhueta */
+#u-foto-placeholder {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: #aaa; font-size: 10px;
+  gap: 4px;
+}
+#u-foto-label {
+  position: absolute;
+  left: 447px; top: 145px;
+  width: 97px; height: 16px;
+  background: #fff;
+  text-align: center;
+  font-size: 11px; color: #333;
+  border-top: 1px solid #ccc;
+}
+
+/* Foto vice (CSS: left=472,top=168,w=75,h=118) */
+#u-vice-box {
+  position: absolute;
+  left: 472px; top: 168px;
+  width: 75px; height: 118px;
+  border: 1px solid #ccc;
+  overflow: hidden;
+  background: #e8e8e8;
+  display: flex; align-items: center; justify-content: center;
+}
+#u-vice-box img { width: 100%; height: 100%; object-fit: cover; }
+#u-vice-label {
+  position: absolute;
+  left: 473px; top: 271px;
+  width: 71px; height: 14px;
+  background: #fff;
+  text-align: center;
+  font-size: 9px; color: #333;
+  border-top: 1px solid #ccc;
+}
+
+/* ── Avisos de estado ── */
+#u-aviso-errado {
+  position: absolute;
+  left: 2px; top: 128px;
+  font-size: 19px; letter-spacing: 0.5px;
+  color: #cc0000;
+}
+#u-aviso-inexistente {
+  position: absolute;
+  left: 2px; top: 168px;
+  font-size: 19px; letter-spacing: 0.5px;
+  color: #cc0000;
+}
+#u-aviso-nulo {
+  position: absolute;
+  left: 188px; top: 208px;
+  font-size: 36px; font-weight: 400;
+  color: #cc0000;
+}
+#u-aviso-branco {
+  position: absolute;
+  left: 118px; top: 122px;
+  font-size: 32px; font-weight: 400;
+  color: #cc0000;
+}
+#u-aviso-conferir {
+  position: absolute;
+  left: 118px; top: 272px;
+  font-size: 24px; font-weight: 400;
+  color: #000;
+}
+
+/* ── Dados do candidato ── */
+#u-nome-label {
+  position: absolute;
+  left: 1px; top: 122px;
+  font-size: 13px; font-weight: 300; color: #000; padding: 2px;
+}
+#u-nome-val {
+  position: absolute;
+  left: 88px; top: 122px;
+  width: 352px;
+  font-size: 15px; font-weight: 600;
+  letter-spacing: 0.4px; color: #000; padding: 2px;
+}
+#u-partido-label {
+  position: absolute;
+  left: 1px; top: 162px;
+  font-size: 13px; font-weight: 300; color: #000; padding: 2px;
+}
+#u-partido-val {
+  position: absolute;
+  left: 88px; top: 162px;
+  width: 352px;
+  font-size: 15px; font-weight: 400; color: #000; padding: 2px;
+}
+#u-vice-label-txt {
+  position: absolute;
+  left: 1px; top: 209px;
+  width: 84px;
+  font-size: 12px; font-weight: 300; color: #000; padding: 2px;
+}
+#u-vice-val {
+  position: absolute;
+  left: 88px; top: 209px;
+  width: 352px;
+  font-size: 15px; font-weight: 400; color: #000; padding: 2px;
+}
+
+/* ── Linha separadora ── */
+#u-regua {
+  position: absolute;
+  left: 0; top: 262px;
+  width: 98%; height: 0;
+  border-top: 2px solid #000;
+}
+
+/* ── Instruções rodapé ── */
+#u-instrucoes {
+  position: absolute;
+  left: 1px; top: 268px;
+  width: 440px;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+  color: #000;
+}
+
+/* ════════════════════════════
+   VISIBILIDADE POR ESTADO
+   Todos os elementos de conteúdo começam ocultos.
+   Cada classe de estado ativa exatamente o que deve aparecer.
+════════════════════════════ */
+#u-num-label, #u-cx1, #u-cx2,
+#u-foto-box, #u-foto-label, #u-vice-box, #u-vice-label,
+#u-aviso-errado, #u-aviso-inexistente, #u-aviso-nulo,
+#u-aviso-branco, #u-aviso-conferir,
+#u-nome-label, #u-nome-val,
+#u-partido-label, #u-partido-val,
+#u-vice-label-txt, #u-vice-val,
+#u-regua, #u-instrucoes {
+  display: none;
+}
+
+/* INICIAL: apenas cargo + fase */
+
+/* DIGITANDO */
+.est-digitando #u-num-label  { display: block; }
+.est-digitando #u-cx1        { display: block; }
+.est-digitando #u-cx2        { display: block; }
+
+/* CANDIDATO ENCONTRADO */
+.est-candidato #u-num-label   { display: block; }
+.est-candidato #u-cx1         { display: block; }
+.est-candidato #u-cx2         { display: block; }
+.est-candidato #u-foto-box    { display: flex; }
+.est-candidato #u-foto-label  { display: block; }
+.est-candidato #u-vice-box    { display: flex; }
+.est-candidato #u-vice-label  { display: block; }
+.est-candidato #u-nome-label  { display: block; }
+.est-candidato #u-nome-val    { display: block; }
+.est-candidato #u-partido-label { display: block; }
+.est-candidato #u-partido-val { display: block; }
+.est-candidato #u-vice-label-txt { display: block; }
+.est-candidato #u-vice-val    { display: block; }
+.est-candidato #u-regua       { display: block; }
+.est-candidato #u-instrucoes  { display: block; }
+
+/* CONFIRMAR (confira seu voto — mesmos dados + aviso) */
+.est-confirmar #u-num-label   { display: block; }
+.est-confirmar #u-cx1         { display: block; }
+.est-confirmar #u-cx2         { display: block; }
+.est-confirmar #u-foto-box    { display: flex; }
+.est-confirmar #u-foto-label  { display: block; }
+.est-confirmar #u-vice-box    { display: flex; }
+.est-confirmar #u-vice-label  { display: block; }
+.est-confirmar #u-nome-label  { display: block; }
+.est-confirmar #u-nome-val    { display: block; }
+.est-confirmar #u-partido-label { display: block; }
+.est-confirmar #u-partido-val { display: block; }
+.est-confirmar #u-vice-label-txt { display: block; }
+.est-confirmar #u-vice-val    { display: block; }
+.est-confirmar #u-aviso-conferir { display: block; }
+.est-confirmar #u-regua       { display: block; }
+.est-confirmar #u-instrucoes  { display: block; }
+
+/* NULO */
+.est-nulo #u-num-label         { display: block; }
+.est-nulo #u-cx1               { display: block; }
+.est-nulo #u-cx2               { display: block; }
+.est-nulo #u-aviso-errado      { display: block; }
+.est-nulo #u-aviso-inexistente { display: block; }
+.est-nulo #u-aviso-nulo        { display: block; }
+.est-nulo #u-regua             { display: block; }
+.est-nulo #u-instrucoes        { display: block; }
+
+/* BRANCO */
+.est-branco #u-aviso-branco  { display: block; }
+.est-branco #u-regua         { display: block; }
+.est-branco #u-instrucoes    { display: block; }
+</style>
+</head>
+<body>
+
+<h1>Gerador · Tela Urna Eletrônica Brasileira</h1>
+
+<div class="layout">
+
+<!-- ═══ CONTROLES ═══ -->
+<div class="ctrl">
+  <h2>Resolução de exportação</h2>
+  <div class="g">
+    <label>Preset</label>
+    <select id="sel-res" onchange="onResChange()">
+      <option value="640,480">640 × 480 (VGA)</option>
+      <option value="800,600">800 × 600 (SVGA)</option>
+      <option value="1024,768">1024 × 768 (XGA)</option>
+      <option value="1280,720" selected>1280 × 720 (HD 720p)</option>
+      <option value="1280,800">1280 × 800</option>
+      <option value="1366,768">1366 × 768</option>
+      <option value="1920,1080">1920 × 1080 (Full HD)</option>
+      <option value="custom">Personalizada…</option>
+    </select>
+    <div class="info" id="info-escala">—</div>
+  </div>
+  <div id="g-custom" class="g" style="display:none">
+    <label>Largura</label>
+    <input type="number" id="cw" value="1280" min="320" max="3840" oninput="calcEscala()">
+    <label style="margin-top:6px">Altura</label>
+    <input type="number" id="ch" value="720"  min="240" max="2160" oninput="calcEscala()">
+  </div>
+
+  <hr class="s">
+  <h2>Estado da tela</h2>
+  <div class="g">
+    <label>Estado</label>
+    <select id="sel-est" onchange="aplicarEstado()">
+      <option value="inicial">Inicial (aguardando)</option>
+      <option value="digitando">Digitando número</option>
+      <option value="candidato">Candidato encontrado</option>
+      <option value="confirmar">Confirmar voto</option>
+      <option value="nulo">Voto nulo</option>
+      <option value="branco">Voto em branco</option>
+    </select>
+  </div>
+
+  <hr class="s">
+  <h2>Conteúdo</h2>
+  <div class="g">
+    <label>Cargo</label>
+    <input type="text" id="f-cargo" value="Presidente" oninput="sincronizar()">
+  </div>
+  <div class="g">
+    <label>Dígito 1</label>
+    <input type="text" id="f-d1" value="1" maxlength="1" oninput="sincronizar()">
+  </div>
+  <div class="g">
+    <label>Dígito 2</label>
+    <input type="text" id="f-d2" value="3" maxlength="1" oninput="sincronizar()">
+  </div>
+  <div class="g">
+    <label>Nome do candidato</label>
+    <input type="text" id="f-nome" value="FULANO DA SILVA" oninput="sincronizar()">
+  </div>
+  <div class="g">
+    <label>Partido</label>
+    <input type="text" id="f-partido" value="PARTIDO EXEMPLO" oninput="sincronizar()">
+  </div>
+  <div class="g">
+    <label>Vice</label>
+    <input type="text" id="f-vice" value="BELTRANO SOUZA" oninput="sincronizar()">
+  </div>
+
+  <hr class="s">
+  <h2>Foto do candidato</h2>
+  <div class="g">
+    <div class="foto-wrap">
+      <input type="file" id="inp-foto" accept="image/*" onchange="carregarFoto(this)">
+      Clique para carregar foto (opcional)
+      <img id="foto-preview">
+    </div>
+  </div>
+  <div class="g">
+    <label>Iniciais no placeholder</label>
+    <input type="text" id="f-iniciais" value="FS" maxlength="3" oninput="sincronizar()">
+  </div>
+
+  <hr class="s">
+  <button class="btn btn-render" onclick="renderizar()">↺ Atualizar</button>
+  <button class="btn btn-export" onclick="exportarPNG()">⬇ Exportar PNG</button>
+  <button class="btn btn-all"    onclick="exportarTodos()">⬇ Exportar todos os estados</button>
+</div>
+
+<!-- ═══ PREVIEW ═══ -->
+<div class="preview-wrap">
+  <h2>Preview — <span id="lbl-res">1280 × 720</span></h2>
+  <div id="preview-box">
+
+    <div id="urna-tela" class="est-inicial">
+
+      <!-- Faixa cinza topo -->
+      <div id="u-faixa-topo">SEU VOTO PARA</div>
+
+      <!-- Painel branco -->
+      <div id="u-painel">
+
+        <div id="u-fase">SEU VOTO PARA</div>
+        <div id="u-cargo">Presidente</div>
+
+        <!-- Dígitos -->
+        <div id="u-num-label">Número:</div>
+        <div id="u-cx1"></div>
+        <div id="u-cx2"></div>
+
+        <!-- Foto candidato -->
+        <div id="u-foto-box">
+          <div id="u-foto-placeholder">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <circle cx="20" cy="14" r="9" fill="#bbb"/>
+              <path d="M2 38c0-9.94 8.06-18 18-18s18 8.06 18 18" fill="#bbb"/>
+            </svg>
+            <span id="u-iniciais" style="font-size:13px;font-weight:700;color:#888;margin-top:2px">FS</span>
+          </div>
+          <img id="u-foto-img" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover">
+        </div>
+        <div id="u-foto-label">Presidente</div>
+
+        <!-- Foto vice -->
+        <div id="u-vice-box">
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%">
+            <svg width="30" height="30" viewBox="0 0 40 40" fill="none">
+              <circle cx="20" cy="14" r="9" fill="#ccc"/>
+              <path d="M2 38c0-9.94 8.06-18 18-18s18 8.06 18 18" fill="#ccc"/>
+            </svg>
+          </div>
+        </div>
+        <div id="u-vice-label">Vice-Presidente</div>
+
+        <!-- Avisos -->
+        <div id="u-aviso-errado">NÚMERO ERRADO</div>
+        <div id="u-aviso-inexistente">CANDIDATO INEXISTENTE</div>
+        <div id="u-aviso-nulo">VOTO NULO</div>
+        <div id="u-aviso-branco">VOTO EM BRANCO</div>
+        <div id="u-aviso-conferir">CONFIRA O SEU VOTO</div>
+
+        <!-- Dados -->
+        <div id="u-nome-label">Nome:</div>
+        <div id="u-nome-val"></div>
+        <div id="u-partido-label">Partido:</div>
+        <div id="u-partido-val"></div>
+        <div id="u-vice-label-txt">Vice-Presidente:</div>
+        <div id="u-vice-val"></div>
+
+        <!-- Separador + instruções -->
+        <div id="u-regua"></div>
+        <div id="u-instrucoes">
+          Aperte a tecla:&nbsp;
+          <span style="color:green;font-weight:700">CONFIRMA</span>&nbsp;para&nbsp;<strong>CONFIRMAR</strong>&nbsp;este voto&nbsp;·&nbsp;
+          <span style="color:#e65c00;font-weight:700">CORRIGE</span>&nbsp;para&nbsp;<strong>REINICIAR</strong>&nbsp;este voto
+        </div>
+
+      </div><!-- #u-painel -->
+    </div><!-- #urna-tela -->
+
+  </div><!-- #preview-box -->
+</div><!-- .preview-wrap -->
+
+</div><!-- .layout -->
+
+<script>
+const BASE_W = 642, BASE_H = 480;
+const tela = document.getElementById('urna-tela');
+
+function getRes() {
+  const v = document.getElementById('sel-res').value;
+  if (v === 'custom') {
+    return [
+      parseInt(document.getElementById('cw').value) || 1280,
+      parseInt(document.getElementById('ch').value) || 720
+    ];
+  }
+  return v.split(',').map(Number);
+}
+
+function calcEscala() {
+  const [W, H] = getRes();
+  document.getElementById('lbl-res').textContent = `${W} × ${H}`;
+  const sx = W / BASE_W, sy = H / BASE_H;
+  // escala uniforme para preview, mantendo proporção visual
+  const s = Math.min(sx, sy, 1.6);  // cap preview em 1.6×
+  tela.style.width  = BASE_W + 'px';
+  tela.style.height = BASE_H + 'px';
+  tela.style.transform = `scale(${s})`;
+  tela.style.transformOrigin = 'top left';
+  const box = document.getElementById('preview-box');
+  box.style.width  = Math.round(BASE_W * s + 16) + 'px';
+  box.style.height = Math.round(BASE_H * s + 16) + 'px';
+  document.getElementById('info-escala').textContent =
+    `Exportação: ${W}×${H} (${sx.toFixed(2)}x H, ${sy.toFixed(2)}x V)`;
+}
+
+function onResChange() {
+  const v = document.getElementById('sel-res').value;
+  document.getElementById('g-custom').style.display = v === 'custom' ? 'block' : 'none';
+  calcEscala();
+}
+
+function aplicarEstado() {
+  const est = document.getElementById('sel-est').value;
+  tela.className = 'est-' + est;
+}
+
+function sincronizar() {
+  document.getElementById('u-cargo').textContent      = document.getElementById('f-cargo').value;
+  document.getElementById('u-cx1').textContent         = document.getElementById('f-d1').value;
+  document.getElementById('u-cx2').textContent         = document.getElementById('f-d2').value;
+  document.getElementById('u-nome-val').textContent    = document.getElementById('f-nome').value;
+  document.getElementById('u-partido-val').textContent = document.getElementById('f-partido').value;
+  document.getElementById('u-vice-val').textContent    = document.getElementById('f-vice').value;
+  document.getElementById('u-foto-label').textContent  = document.getElementById('f-cargo').value;
+  document.getElementById('u-iniciais').textContent    = document.getElementById('f-iniciais').value;
+}
+
+function carregarFoto(inp) {
+  if (!inp.files || !inp.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('foto-preview');
+    prev.src = e.target.result; prev.style.display = 'block';
+    const img = document.getElementById('u-foto-img');
+    img.src = e.target.result; img.style.display = 'block';
+    document.getElementById('u-foto-placeholder').style.display = 'none';
+  };
+  reader.readAsDataURL(inp.files[0]);
+}
+
+function renderizar() { calcEscala(); aplicarEstado(); sincronizar(); }
+
+async function exportarPNG(nomeArq, estOverride) {
+  const [W, H] = getRes();
+  const sx = W / BASE_W, sy = H / BASE_H;
+
+  // troca de estado temporária
+  const estOrig = tela.className;
+  if (estOverride) {
+    tela.className = 'est-' + estOverride;
+    sincronizar();
+    await delay(100);
+  }
+
+  // remove transform para render nativo
+  const tfOrig = tela.style.transform;
+  tela.style.transform = 'none';
+  tela.style.width  = BASE_W + 'px';
+  tela.style.height = BASE_H + 'px';
+  await delay(60);
+
+  const canvas = await html2canvas(tela, {
+    width: BASE_W, height: BASE_H,
+    scale: Math.max(sx, sy),
+    backgroundColor: '#ffffff',
+    logging: false, useCORS: true
+  });
+
+  // redimensiona para resolução exata
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(canvas, 0, 0, W, H);
+
+  // restaura
+  tela.style.transform = tfOrig;
+  if (estOverride) { tela.className = estOrig; sincronizar(); }
+  calcEscala();
+
+  const nome = nomeArq || `tela_urna_${W}x${H}_${document.getElementById('sel-est').value}.png`;
+  const a = document.createElement('a');
+  a.href = out.toDataURL('image/png');
+  a.download = nome; a.click();
+}
+
+async function exportarTodos() {
+  const [W, H] = getRes();
+  const estados = ['inicial','digitando','candidato','confirmar','nulo','branco'];
+  for (const est of estados) {
+    await exportarPNG(`tela_urna_${W}x${H}_${est}.png`, est);
+    await delay(350);
+  }
+}
+
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+// init
+renderizar();
+</script>
+</body>
+</html>
